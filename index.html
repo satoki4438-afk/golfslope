@@ -48,6 +48,24 @@
     let latestAngles = { beta: 0, gamma: 0 };
     let countdownInterval;
 
+    // ユーザーの傾向とアドバイスを保持するオブジェクト
+    let userProfile = {
+      flat: '', adviceFlat: '',
+      toeUp: '', adviceToeUp: '',
+      toeDown: '', adviceToeDown: '',
+      leftUp: '', adviceLeftUp: '',
+      leftDown: '', adviceLeftDown: ''
+    };
+
+    // 初期化時にローカルストレージから読み込み
+    try {
+      const saved = localStorage.getItem('golfUserProfile');
+      if (saved) {
+        // 既存データとマージして新しい項目(advice)に対応
+        userProfile = { ...userProfile, ...JSON.parse(saved) };
+      }
+    } catch(e) {}
+
     // DOM要素
     const appContainer = document.getElementById('app-container');
 
@@ -72,12 +90,75 @@
           </ul>
           <button 
             onclick="requestAccess()"
-            class="w-full py-4 bg-green-500 hover:bg-green-600 active:bg-green-700 text-white rounded-2xl font-bold text-lg shadow-lg transition-transform transform hover:scale-105"
+            class="w-full py-4 mb-4 bg-green-500 hover:bg-green-600 active:bg-green-700 text-white rounded-2xl font-bold text-lg shadow-lg transition-transform transform hover:scale-105"
           >
             測定をはじめる
           </button>
+          <button 
+            onclick="renderSettings()"
+            class="w-full py-3 bg-white border-2 border-green-500 text-green-600 hover:bg-green-50 active:bg-green-100 rounded-2xl font-bold text-sm shadow-sm transition-colors"
+          >
+            ⚙️ 自分の傾向と対策メモを設定
+          </button>
         </div>
       `;
+    }
+
+    // 画面描画：設定画面
+    function renderSettings() {
+      // 傾向と対策を入力しやすいようにフォームを分割
+      const createField = (num, title, keyBase, phTendency, phAdvice) => `
+        <div class="bg-gray-50 p-3 rounded-xl border border-gray-200">
+          <label class="block text-sm font-bold text-green-700 mb-2">${num} ${title}</label>
+          <input type="text" id="tendency-${keyBase}" value="${userProfile[keyBase] || ''}" placeholder="傾向: ${phTendency}" class="w-full border border-gray-300 rounded-lg p-2 text-sm mb-2 focus:ring-green-500 focus:border-green-500">
+          <input type="text" id="advice-${keyBase}" value="${userProfile['advice' + keyBase.charAt(0).toUpperCase() + keyBase.slice(1)] || ''}" placeholder="対策: ${phAdvice}" class="w-full border border-yellow-300 bg-yellow-50 rounded-lg p-2 text-sm focus:ring-yellow-500 focus:border-yellow-500">
+        </div>
+      `;
+
+      appContainer.innerHTML = `
+        <div class="flex flex-col items-center animate-fade-in w-full text-left">
+          <h2 class="text-lg font-bold mb-4 text-green-700 w-full border-b pb-2">マイ・アドバイス設定</h2>
+          
+          <div class="w-full space-y-4 mb-6 max-h-[400px] overflow-y-auto pr-2">
+            ${createField('①', '平地(練習場)', 'flat', '右に曲がりやすい', '右脇をしめる！')}
+            ${createField('②', 'つま先上がり', 'toeUp', '左に引っかけやすい', 'クラブを指2本分短く持つ')}
+            ${createField('③', 'つま先下がり', 'toeDown', 'シャンクが出やすい', '膝をしっかり曲げる')}
+            ${createField('④', '左足上がり(上り)', 'leftUp', '球が上がりすぎる', '1番手大きいクラブでコンパクトに')}
+            ${createField('⑤', '左足下がり(下り)', 'leftDown', 'トップしやすい', '球を右足寄りに置く')}
+          </div>
+
+          <button onclick="saveProfile()" class="w-full py-3 mb-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold text-lg shadow-md transition-colors">
+            保存して戻る
+          </button>
+          <button onclick="renderStart()" class="w-full py-3 bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-xl font-bold shadow-sm transition-colors">
+            キャンセル
+          </button>
+        </div>
+      `;
+    }
+
+    // 設定の保存処理
+    function saveProfile() {
+      userProfile.flat = document.getElementById('tendency-flat').value;
+      userProfile.adviceFlat = document.getElementById('advice-flat').value;
+      
+      userProfile.toeUp = document.getElementById('tendency-toeUp').value;
+      userProfile.adviceToeUp = document.getElementById('advice-toeUp').value;
+      
+      userProfile.toeDown = document.getElementById('tendency-toeDown').value;
+      userProfile.adviceToeDown = document.getElementById('advice-toeDown').value;
+      
+      userProfile.leftUp = document.getElementById('tendency-leftUp').value;
+      userProfile.adviceLeftUp = document.getElementById('advice-leftUp').value;
+      
+      userProfile.leftDown = document.getElementById('tendency-leftDown').value;
+      userProfile.adviceLeftDown = document.getElementById('advice-leftDown').value;
+      
+      try {
+        localStorage.setItem('golfUserProfile', JSON.stringify(userProfile));
+      } catch(e) {}
+      
+      renderStart();
     }
 
     // 画面描画：測定中画面
@@ -123,7 +204,7 @@
 
           <div class="w-full text-left mb-8">
             <h3 class="font-bold text-gray-700 border-b-2 border-gray-100 pb-2 mb-3 flex items-center gap-2">
-              <span>💡</span> AIアドバイス
+              <span>💡</span> AIアドバイス & マイメモ
             </h3>
             <div class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap bg-gray-50 p-4 rounded-xl border border-gray-100">${result.detail}</div>
           </div>
@@ -213,41 +294,75 @@
       let adviceFB = '';
       let isFlat = true;
 
+      let userLrTendency = '';
+      let userFbTendency = '';
+
       // 左右の判定 (スマホの上部をピンに向けた状態)
-      // gammaがマイナス = 左側が上がっている = つま先上がり（右利きの場合）
       if (gamma < -3) {
         lr = 'つま先上がり';
         adviceLR = '【左右】ボールが左に曲がりやすいです。目標の少し右を狙い、クラブを短く持ちましょう。';
         isFlat = false;
+        if (userProfile.toeUp || userProfile.adviceToeUp) {
+          userLrTendency = `[つま先上がり]\n`;
+          if (userProfile.toeUp) userLrTendency += ` 傾向: ${userProfile.toeUp}\n`;
+          if (userProfile.adviceToeUp) userLrTendency += ` 対策: ${userProfile.adviceToeUp}\n`;
+        }
       } else if (gamma > 3) {
         lr = 'つま先下がり';
         adviceLR = '【左右】ボールが右に曲がりやすいです。目標の少し左を狙い、膝を曲げて腰を落として打ちましょう。';
         isFlat = false;
+        if (userProfile.toeDown || userProfile.adviceToeDown) {
+          userLrTendency = `[つま先下がり]\n`;
+          if (userProfile.toeDown) userLrTendency += ` 傾向: ${userProfile.toeDown}\n`;
+          if (userProfile.adviceToeDown) userLrTendency += ` 対策: ${userProfile.adviceToeDown}\n`;
+        }
       }
 
       // 前後の判定
-      // betaがマイナス = 手前が上がっている = 左足上がり（上り坂）
       if (beta < -3) {
         fb = '左足上がり (上り坂)';
         adviceFB = '【前後】ボールが高く上がり距離が落ちます。1〜2番手大きいクラブを選び、斜面に沿って振りましょう。';
         isFlat = false;
+        if (userProfile.leftUp || userProfile.adviceLeftUp) {
+          userFbTendency = `[左足上がり]\n`;
+          if (userProfile.leftUp) userFbTendency += ` 傾向: ${userProfile.leftUp}\n`;
+          if (userProfile.adviceLeftUp) userFbTendency += ` 対策: ${userProfile.adviceLeftUp}\n`;
+        }
       } else if (beta > 3) {
         fb = '左足下がり (下り坂)';
         adviceFB = '【前後】ダフりやすいです。ボールを右足寄りに置き、低い球を打つイメージで振りましょう。';
         isFlat = false;
+        if (userProfile.leftDown || userProfile.adviceLeftDown) {
+          userFbTendency = `[左足下がり]\n`;
+          if (userProfile.leftDown) userFbTendency += ` 傾向: ${userProfile.leftDown}\n`;
+          if (userProfile.adviceLeftDown) userFbTendency += ` 対策: ${userProfile.adviceLeftDown}\n`;
+        }
+      }
+
+      // ユーザー傾向の文字列構築
+      let userAdviceStr = '';
+      if (userProfile.flat || userProfile.adviceFlat) {
+        userAdviceStr += `\n⛳️ 【普段(平地)のメモ】\n`;
+        if (userProfile.flat) userAdviceStr += `傾向: ${userProfile.flat}\n`;
+        if (userProfile.adviceFlat) userAdviceStr += `対策: ${userProfile.adviceFlat}\n`;
+      }
+      if (!isFlat && (userFbTendency || userLrTendency)) {
+        userAdviceStr += `\n⚠️ 【今回の傾斜マイメモ】\n`;
+        if (userFbTendency) userAdviceStr += `${userFbTendency}`;
+        if (userLrTendency) userAdviceStr += `${userLrTendency}`;
       }
 
       if (isFlat) {
         return {
           title: 'ほぼ平坦なライです',
-          detail: '特別な調整は必要ありません。基本通りのスイングで自信を持って打ちましょう！',
+          detail: '特別な調整は必要ありません。基本通りのスイングで自信を持って打ちましょう！\n' + userAdviceStr,
           raw: { beta: Math.round(beta), gamma: Math.round(gamma) }
         };
       }
 
       return {
         title: `${fb} ＋ ${lr}`,
-        detail: `${adviceFB}\n\n${adviceLR}`,
+        detail: `${adviceFB}\n\n${adviceLR}\n\n---${userAdviceStr}`,
         raw: { beta: Math.round(beta), gamma: Math.round(gamma) }
       };
     }
