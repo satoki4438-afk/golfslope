@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ゴルフ傾斜アドバイザー</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fade-in 0.4s ease-out forwards;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
+    @keyframes pulse {
+      50% { opacity: .5; }
+    }
+    .animate-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-green-50 text-gray-800 font-sans p-4 flex flex-col items-center justify-center">
+
+  <div class="max-w-md w-full bg-white rounded-3xl shadow-xl overflow-hidden border-2 border-green-200">
+    
+    <!-- ヘッダー -->
+    <div class="bg-green-600 text-white p-6 text-center">
+      <h1 class="text-2xl font-bold tracking-wider">AI CADDIE</h1>
+      <p class="text-green-100 text-sm mt-1">傾斜アドバイザー</p>
+    </div>
+
+    <div class="p-8 flex flex-col items-center min-h-[400px] justify-center text-center relative" id="app-container">
+      <!-- ここにコンテンツがJavaScriptで挿入されます -->
+    </div>
+
+  </div>
+
+  <script>
+    // 状態変数
+    let latestAngles = { beta: 0, gamma: 0 };
+    let countdownInterval;
+
+    // DOM要素
+    const appContainer = document.getElementById('app-container');
+
+    // 画面描画：スタート画面
+    function renderStart(errorMsg = '') {
+      let errorHtml = '';
+      if (errorMsg) {
+        errorHtml = `<div class="bg-red-100 text-red-600 p-4 rounded-lg mb-6 w-full text-sm text-left">${errorMsg}</div>`;
+      }
+
+      appContainer.innerHTML = `
+        ${errorHtml}
+        <div class="flex flex-col items-center animate-fade-in w-full">
+          <div class="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6 text-4xl shadow-inner">
+            ⛳️
+          </div>
+          <h2 class="text-xl font-bold mb-4 text-gray-700">スマホを置いて傾斜を測ります</h2>
+          <ul class="text-sm text-gray-500 text-left mb-8 space-y-2 bg-gray-50 p-4 rounded-xl w-full">
+            <li>1. ボタンを押すと3秒数えます。</li>
+            <li>2. スマホの**画面を上**にして芝生（地面）に置きます。</li>
+            <li>3. スマホの上部を目標に向けてください。</li>
+          </ul>
+          <button 
+            onclick="requestAccess()"
+            class="w-full py-4 bg-green-500 hover:bg-green-600 active:bg-green-700 text-white rounded-2xl font-bold text-lg shadow-lg transition-transform transform hover:scale-105"
+          >
+            測定をはじめる
+          </button>
+        </div>
+      `;
+    }
+
+    // 画面描画：測定中画面
+    function renderMeasuring(countdown) {
+      appContainer.innerHTML = `
+        <div class="flex flex-col items-center animate-pulse w-full">
+          <div class="text-6xl font-black text-green-600 mb-6 drop-shadow-md" id="countdown-display">
+            ${countdown}
+          </div>
+          <h2 class="text-xl font-bold mb-2 text-gray-700">スマホを置いてください</h2>
+          <p class="text-gray-500 text-sm">画面を上にして、目標に向けて...</p>
+          
+          <div class="mt-8 w-16 h-16 border-4 border-green-200 border-t-green-500 rounded-full animate-spin"></div>
+        </div>
+      `;
+    }
+
+    // カウントダウン表示の更新
+    function updateCountdownDisplay(countdown) {
+      const display = document.getElementById('countdown-display');
+      if (display) {
+        display.innerText = countdown;
+      }
+    }
+
+    // 画面描画：結果画面
+    function renderResult(result) {
+      const displayTitle = result.title.replace('平坦 ＋ ', '').replace(' ＋ 平坦', '');
+      
+      appContainer.innerHTML = `
+        <div class="flex flex-col items-center w-full animate-fade-in">
+          <div class="w-full bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-green-400"></div>
+            <h2 class="text-lg font-bold text-green-800 mb-1">現在のライ（傾斜）</h2>
+            <p class="text-xl font-black text-gray-800 leading-tight">
+              ${displayTitle}
+            </p>
+            <div class="mt-3 text-xs text-gray-400 flex justify-center gap-4">
+              <span>前後: ${result.raw.beta}°</span>
+              <span>左右: ${result.raw.gamma}°</span>
+            </div>
+          </div>
+
+          <div class="w-full text-left mb-8">
+            <h3 class="font-bold text-gray-700 border-b-2 border-gray-100 pb-2 mb-3 flex items-center gap-2">
+              <span>💡</span> AIアドバイス
+            </h3>
+            <div class="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap bg-gray-50 p-4 rounded-xl border border-gray-100">${result.detail}</div>
+          </div>
+
+          <button 
+            onclick="renderStart()"
+            class="w-full py-4 bg-white border-2 border-green-500 text-green-600 hover:bg-green-50 active:bg-green-100 rounded-2xl font-bold text-lg shadow-sm transition-colors"
+          >
+            もう一度測る
+          </button>
+        </div>
+      `;
+    }
+
+    // センサーのアクセス許可をリクエストする（iOS13+対応）
+    async function requestAccess() {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const permission = await DeviceOrientationEvent.requestPermission();
+          if (permission === 'granted') {
+            startMeasurement();
+          } else {
+            renderStart('センサーの使用が許可されませんでした。設定を確認してください。');
+          }
+        } catch (error) {
+          renderStart('センサーの許可リクエスト中にエラーが発生しました。');
+          console.error(error);
+        }
+      } else {
+        // Androidや古いiOSの場合はそのまま開始
+        startMeasurement();
+      }
+    }
+
+    // 傾きデータを取得するリスナー
+    function handleOrientation(event) {
+      latestAngles = {
+        beta: event.beta,   // 前後の傾き [-180, 180]
+        gamma: event.gamma  // 左右の傾き [-90, 90]
+      };
+    }
+
+    // 測定開始
+    function startMeasurement() {
+      let counter = 3;
+      renderMeasuring(counter);
+
+      // センサーのリスナーを登録
+      window.addEventListener('deviceorientation', handleOrientation);
+
+      // 3秒間のカウントダウン
+      countdownInterval = setInterval(() => {
+        counter -= 1;
+        updateCountdownDisplay(counter);
+
+        if (counter === 0) {
+          clearInterval(countdownInterval);
+          finishMeasurement();
+        }
+      }, 1000);
+    }
+
+    // 測定終了と結果表示
+    function finishMeasurement() {
+      // リスナーを解除
+      window.removeEventListener('deviceorientation', handleOrientation);
+
+      // バイブレーション（対応機種のみ）
+      if (navigator.vibrate) {
+        navigator.vibrate(200);
+      }
+
+      // 最新の角度を取得してアドバイスを計算
+      const advice = calculateAdvice(latestAngles.beta, latestAngles.gamma);
+      renderResult(advice);
+    }
+
+    // 角度からアドバイスを判定するロジック（しきい値は±3度）
+    function calculateAdvice(beta, gamma) {
+      // 値がnull/undefinedの場合は0として扱う
+      beta = beta || 0;
+      gamma = gamma || 0;
+
+      let lr = '平坦';
+      let fb = '平坦';
+      let adviceLR = '';
+      let adviceFB = '';
+      let isFlat = true;
+
+      // 左右の判定 (スマホの上部をピンに向けた状態)
+      // gammaがマイナス = 左側が上がっている = つま先上がり（右利きの場合）
+      if (gamma < -3) {
+        lr = 'つま先上がり';
+        adviceLR = '【左右】ボールが左に曲がりやすいです。目標の少し右を狙い、クラブを短く持ちましょう。';
+        isFlat = false;
+      } else if (gamma > 3) {
+        lr = 'つま先下がり';
+        adviceLR = '【左右】ボールが右に曲がりやすいです。目標の少し左を狙い、膝を曲げて腰を落として打ちましょう。';
+        isFlat = false;
+      }
+
+      // 前後の判定
+      // betaがマイナス = 手前が上がっている = 左足上がり（上り坂）
+      if (beta < -3) {
+        fb = '左足上がり (上り坂)';
+        adviceFB = '【前後】ボールが高く上がり距離が落ちます。1〜2番手大きいクラブを選び、斜面に沿って振りましょう。';
+        isFlat = false;
+      } else if (beta > 3) {
+        fb = '左足下がり (下り坂)';
+        adviceFB = '【前後】ダフりやすいです。ボールを右足寄りに置き、低い球を打つイメージで振りましょう。';
+        isFlat = false;
+      }
+
+      if (isFlat) {
+        return {
+          title: 'ほぼ平坦なライです',
+          detail: '特別な調整は必要ありません。基本通りのスイングで自信を持って打ちましょう！',
+          raw: { beta: Math.round(beta), gamma: Math.round(gamma) }
+        };
+      }
+
+      return {
+        title: `${fb} ＋ ${lr}`,
+        detail: `${adviceFB}\n\n${adviceLR}`,
+        raw: { beta: Math.round(beta), gamma: Math.round(gamma) }
+      };
+    }
+
+    // 初期表示
+    renderStart();
+  </script>
+</body>
+</html>
